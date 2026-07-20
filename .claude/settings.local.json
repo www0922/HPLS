@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(pandoc \"excel_data/NGS  T7-PE150文件.docx\" -t markdown --track-changes=all)",
-      "Bash(python -c ' *)",
-      "Bash(python clear_pooling.py)"
-    ]
-  }
-}
