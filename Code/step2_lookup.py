@@ -23,11 +23,10 @@ import openpyxl
 from openpyxl.styles import Alignment
 from collections import defaultdict
 
-from pathlib import Path
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-SRC_C = str(BASE / '外包文库质检总表2026(1).xlsx')
-SRC_D = str(BASE / '2026年1月-12月自建库出库报告-T7.xlsx')
-DST   = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
+from config import DST, get_src_c, get_src_d
+
+SRC_C = get_src_c()
+SRC_D = get_src_d()
 SHEETS = ['A', 'B', 'C']
 CENTER = Alignment(horizontal='center', vertical='center')
 
@@ -44,20 +43,22 @@ B_Q = 17    # 环化*
 
 
 def build_c_lookup():
-    """构建C表查找字典: {HGC编号: row_data}，搜所有sheet"""
+    """构建C表查找字典: {HGC编号: row_data} + {文库名称: row_data}，搜所有sheet"""
     wb = openpyxl.load_workbook(SRC_C, data_only=True)
     lookup = {}
+    lookup_by_name = {}
 
     for sn in wb.sheetnames:
         ws = wb[sn]
-        # 找表头行，确定列位置
         header_row = None
-        col_f = col_l = col_o = col_v = col_w = col_x = col_m = None
+        col_f = col_g = col_l = col_o = col_v = col_w = col_x = col_m = None
         for row in range(1, min(5, ws.max_row + 1)):
             for col in range(1, ws.max_column + 1):
                 v = str(ws.cell(row=row, column=col).value or '')
                 if 'HGC编号' in v:
                     col_f = col
+                if v == '文库名称':
+                    col_g = col
                 if 'Qubit浓度' in v:
                     col_l = col
                 if v == '板号':
@@ -77,7 +78,7 @@ def build_c_lookup():
         if not col_f:
             continue
 
-        print(f'  C表[{sn}]: header_row={header_row}, F={col_f}, L={col_l}, O={col_o}, V={col_v}, W={col_w}, X={col_x}, M={col_m}')
+        print(f'  C表[{sn}]: F={col_f}, G={col_g}, L={col_l}, O={col_o}, V={col_v}, W={col_w}, X={col_x}, M={col_m}')
 
         for row in range(header_row + 1, ws.max_row + 1):
             key = ws.cell(row=row, column=col_f).value
@@ -90,18 +91,23 @@ def build_c_lookup():
             def get_val(c):
                 return ws.cell(row=row, column=c).value if c else None
 
-            lookup[key] = {
-                'qubit':  get_val(col_l),  # Qubit浓度
-                'plate':  get_val(col_o),  # 板号
-                'struct': get_val(col_v),  # 文库结构
-                'phos':   get_val(col_w),  # 磷酸化*
-                'circ':   get_val(col_x),  # 环化*
-                'frag':   get_val(col_m),  # 平均片段
+            rd = {
+                'qubit':  get_val(col_l),
+                'plate':  get_val(col_o),
+                'struct': get_val(col_v),
+                'phos':   get_val(col_w),
+                'circ':   get_val(col_x),
+                'frag':   get_val(col_m),
             }
+            lookup[key] = rd
+            # 文库名称备用索引
+            name_key = get_val(col_g)
+            if name_key:
+                lookup_by_name[str(name_key).strip()] = rd
 
     wb.close()
-    print(f'  C表共加载 {len(lookup)} 条记录')
-    return lookup
+    print(f'  C表共加载 {len(lookup)} 条(HGC编号) + {len(lookup_by_name)} 条(文库名称)')
+    return lookup, lookup_by_name
 
 
 def build_d_lookup():
@@ -160,7 +166,7 @@ def is_hgc_type(lib_id):
     return s.startswith('HGC-Lib-') or s.startswith('HGC-POOL-')
 
 
-def fill_sheet(ws_b, c_lookup, d_lookup, name):
+def fill_sheet(ws_b, c_lookup, c_by_name, d_lookup, name):
     """填充单个工作表"""
     filled = 0
     missed = 0
@@ -185,6 +191,7 @@ def fill_sheet(ws_b, c_lookup, d_lookup, name):
             else:
                 missed += 1
         else:
+            # 非HGC: 先查D表，再查C表文库名称
             data = d_lookup.get(lib_id)
             if data:
                 write_cell(ws_b, row, B_C, data.get('qubit'))
@@ -192,6 +199,16 @@ def fill_sheet(ws_b, c_lookup, d_lookup, name):
                 write_cell(ws_b, row, B_O, data.get('eval'))
                 write_cell(ws_b, row, B_K, data.get('plate'))
                 write_cell(ws_b, row, B_J, data.get('hole'))
+                write_cell(ws_b, row, B_M, data.get('frag'))
+                filled += 1
+            elif c_by_name and lib_id in c_by_name:
+                data = c_by_name[lib_id]
+                write_cell(ws_b, row, B_C, data.get('qubit'))
+                write_cell(ws_b, row, B_N, data.get('qubit'))
+                write_cell(ws_b, row, B_O, data.get('struct'))
+                write_cell(ws_b, row, B_P, data.get('phos'))
+                write_cell(ws_b, row, B_Q, data.get('circ'))
+                write_cell(ws_b, row, B_K, data.get('plate'))
                 write_cell(ws_b, row, B_M, data.get('frag'))
                 filled += 1
             else:
@@ -211,7 +228,7 @@ def write_cell(ws, row, col, value):
 
 def main():
     print('构建C表查找字典...')
-    c_lookup = build_c_lookup()
+    c_lookup, c_by_name = build_c_lookup()
 
     print('构建D表查找字典...')
     d_lookup = build_d_lookup()
@@ -220,7 +237,7 @@ def main():
 
     for name in SHEETS:
         print(f'\n处理工作表 [{name}]')
-        fill_sheet(wb_dst[name], c_lookup, d_lookup, name)
+        fill_sheet(wb_dst[name], c_lookup, c_by_name, d_lookup, name)
 
     wb_dst.save(DST)
     print(f'\n{"="*50}\n✅ 步骤二完成 → {DST}')

@@ -11,12 +11,9 @@
    - A列~K列 标框线
 """
 import openpyxl
-from pathlib import Path
 from openpyxl.styles import Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-DST = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
+from config import DST
 SHEETS = ['A', 'B', 'C']
 CENTER = Alignment(horizontal='center', vertical='center')
 ALL_BORDER = Border(

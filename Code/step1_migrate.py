@@ -16,11 +16,10 @@ import openpyxl
 from openpyxl.styles import Alignment
 from collections import defaultdict
 
-from pathlib import Path
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-SRC = str(BASE / '江西华大T7+上机-PE150-20260711.xlsx')
-DST = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
-SHEETS = ['A', 'B', 'C']
+from config import DST, get_src_a, sheet_map_a
+
+SRC = get_src_a()
+SHEETS = [dst for _, dst in sheet_map_a()]  # 数字sheet→字母
 CENTER = Alignment(horizontal='center', vertical='center')
 
 # ── 列索引 (1-based) ──
@@ -144,12 +143,13 @@ def migrate_sheet(ws_src, ws_dst, name):
 
 
 def main():
+    sheet_map = sheet_map_a()
     wb_src = openpyxl.load_workbook(SRC)
     wb_dst = openpyxl.load_workbook(DST)
 
-    for name in SHEETS:
-        print(f'\n{"─"*50}\n处理工作表 [{name}]')
-        migrate_sheet(wb_src[name], wb_dst[name], name)
+    for src_name, dst_name in sheet_map:
+        print(f'\n{"─"*50}\n处理: A表[{src_name}] → B表[{dst_name}]')
+        migrate_sheet(wb_src[src_name], wb_dst[dst_name], dst_name)
 
     wb_dst.save(DST)
     print(f'\n{"="*50}\n✅ 步骤一完成 → {DST}')

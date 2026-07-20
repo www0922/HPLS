@@ -11,11 +11,8 @@
   5. 填写汇总行
 """
 import openpyxl
-from pathlib import Path
 from openpyxl.styles import Alignment, PatternFill
-
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-DST = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
+from config import DST
 SHEETS = ['A', 'B', 'C']
 CENTER = Alignment(horizontal='center', vertical='center')
 LIGHT_BLUE = PatternFill(start_color='99CCFF', end_color='99CCFF', fill_type='solid')

@@ -8,12 +8,9 @@
 5. 每组汇总行: H_sum, K_sum, M_sum
 """
 import openpyxl
-from pathlib import Path
 from datetime import datetime
 from openpyxl.styles import Alignment, Border, Side
-
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-DST = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
+from config import DST
 CENTER = Alignment(horizontal='center', vertical='center')
 ALL_BORDER = Border(
     left=Side(style='thin'), right=Side(style='thin'),

@@ -2,11 +2,8 @@
 统一格式: 字体、行高、数字格式、列宽
 """
 import openpyxl
-from pathlib import Path
 from openpyxl.styles import Font
-
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-DST = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
+from config import DST
 FONT = Font(name='Times New Roman', size=10)
 
 wb = openpyxl.load_workbook(DST)

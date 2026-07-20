@@ -24,9 +24,7 @@
 import openpyxl
 from openpyxl.styles import Alignment
 
-from pathlib import Path
-BASE = Path(__file__).resolve().parent.parent / 'excel_data'
-DST = str(BASE / '20260711文库pooling表T7+PE150-zss.xlsx')
+from config import DST
 SHEETS = ['A', 'B', 'C']
 CENTER = Alignment(horizontal='center', vertical='center')
 
@@ -133,22 +131,25 @@ def group_rows(rows):
 
 
 def split_oversized_groups(groups):
-    """拆分 D_sum > 1000 的组, 行数尽量均匀"""
-    import math
+    """拆分 D_sum > 1000 的组, 保证每子组 D合计 ≤ 1000"""
     result = []
     for g in groups:
         d_sum = sum(r['cells'].get(COL_D, 0) or 0 for r in g)
         if d_sum <= 1000 or len(g) <= 1:
             result.append(g)
         else:
-            n = math.ceil(d_sum / 1000)
-            size = len(g) // n
-            rem = len(g) % n
-            start = 0
-            for i in range(n):
-                sub_size = size + (1 if i < rem else 0)
-                result.append(g[start:start + sub_size])
-                start += sub_size
+            cur = []
+            cur_sum = 0
+            for r in g:
+                d = r['cells'].get(COL_D, 0) or 0
+                if cur and cur_sum + d > 1000:
+                    result.append(cur)
+                    cur = []
+                    cur_sum = 0
+                cur.append(r)
+                cur_sum += d
+            if cur:
+                result.append(cur)
     return result
 
 

@@ -1,12 +1,10 @@
 """
 清空 Pooling 表内容，只保留表头
 """
-from pathlib import Path
+from config import DST
 import openpyxl
 
-# 基于脚本所在目录定位 Excel 文件，无论从哪里运行都能找到
-SCRIPT_DIR = Path(__file__).resolve().parent
-POOLING = str(SCRIPT_DIR.parent / 'excel_data' / '20260711文库pooling表T7+PE150-zss.xlsx')
+POOLING = DST
 
 wb = openpyxl.load_workbook(POOLING)
 
