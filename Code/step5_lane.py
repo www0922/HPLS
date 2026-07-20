@@ -52,9 +52,27 @@ def read_groups(ws):
     return groups
 
 
+def read_groups_by_summary(ws):
+    """读取工作表(无空白行), 按汇总行识别组: 汇总行B列为空但D列有值"""
+    groups = []
+    current = []
+    for row in range(2, ws.max_row + 1):
+        b = ws.cell(row=row, column=2).value
+        d = ws.cell(row=row, column=4).value
+        if b is None and d is not None:
+            current.append(row)
+            groups.append(current)
+            current = []
+        else:
+            current.append(row)
+    if current:
+        groups.append(current)
+    return groups
+
+
 def process_abc_sheet(ws, name):
     """处理 A/B/C 工作表: Lane编号、合并、框线"""
-    groups = read_groups(ws)
+    groups = read_groups_by_summary(ws)
     max_col = ws.max_column
 
     lane_info = []  # [(lane_name, first_g_val, first_h_val, summary_d_val), ...]

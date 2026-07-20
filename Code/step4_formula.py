@@ -200,10 +200,7 @@ def process_sheet(ws, name):
         ws.delete_rows(2, ws.max_row - 1)
 
     current_row = 2
-    for gi, (sg_rows, sg_mm, scale, is_direct) in enumerate(all_final):
-        if gi > 0:
-            current_row += 1  # 组间空行
-
+    for sg_rows, sg_mm, scale, is_direct in all_final:
         # 写入数据行
         for rd in sg_rows:
             for col in range(1, max_col + 1):
