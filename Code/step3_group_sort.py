@@ -91,59 +91,45 @@ def get_customer_key(lib_type, customer):
 def group_rows(rows):
     """
     对同一大类内的行进行分组
-    1. 先按 (客户单位, 文库类型) 排序聚合同key的行
-    2. 再扫描分组, 池文库单独成组
+    HGC-POOL- 池文库: 同客户+同类型合并, 不与HGC-Lib-混合
+    普通库: 同客户+同类型合并
 
     参数:
         rows: [row_data, ...]  每行包含 lib_id, lib_type, customer 等
     返回:
         [[row, row, ...], [row, ...], ...]  每个子列表是一组
     """
-    # 分离池文库和普通行
-    pools = []
-    normal = []
-    for r in rows:
-        if is_pool_library(r.get('lib_id')):
-            pools.append(r)
-        else:
-            normal.append(r)
+    is_pool = lambda r: str(r.get('lib_id') or '').startswith('HGC-POOL-')
+    pools = [r for r in rows if is_pool(r)]
+    normal = [r for r in rows if not is_pool(r)]
 
-    # 普通行按 (客户单位, 文库类型) 排序聚合
-    normal.sort(key=lambda r: (
+    sort_key = lambda r: (
         get_customer_key(r.get('lib_type'), r.get('customer')),
         str(r.get('lib_type') or ''),
-    ))
+    )
 
-    # 扫描分组: 相邻同key合并
-    groups = []
-    current_group = []
-
-    for r in normal:
-        cust_key = get_customer_key(r.get('lib_type'), r.get('customer'))
-        lib_type = str(r.get('lib_type') or '')
-
-        if current_group:
-            first = current_group[0]
-            first_key = (
-                get_customer_key(first.get('lib_type'), first.get('customer')),
-                str(first.get('lib_type') or ''),
-            )
-            if (cust_key, lib_type) == first_key:
-                current_group.append(r)
+    def scan_group(lst):
+        lst.sort(key=sort_key)
+        groups = []
+        cur = []
+        for r in lst:
+            if cur:
+                first = cur[0]
+                if (get_customer_key(r.get('lib_type'), r.get('customer')),
+                    str(r.get('lib_type') or '')) == \
+                   (get_customer_key(first.get('lib_type'), first.get('customer')),
+                    str(first.get('lib_type') or '')):
+                    cur.append(r)
+                else:
+                    groups.append(cur)
+                    cur = [r]
             else:
-                groups.append(current_group)
-                current_group = [r]
-        else:
-            current_group = [r]
+                cur = [r]
+        if cur:
+            groups.append(cur)
+        return groups
 
-    if current_group:
-        groups.append(current_group)
-
-    # 池文库: 每个单独一组
-    for p in pools:
-        groups.append([p])
-
-    return groups
+    return scan_group(normal) + scan_group(pools)
 
 
 def split_oversized_groups(groups):

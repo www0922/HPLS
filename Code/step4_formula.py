@@ -36,6 +36,7 @@ COL_L = 12   # 备注
 COL_N = 14   # Qubit浓度(二)
 COL_O = 15   # 文库结构
 COL_P = 16   # 磷酸化*
+COL_M = 13   # 平均片段
 COL_Q = 17   # 环化*
 
 
@@ -67,6 +68,7 @@ def read_groups(ws):
             'B': ws.cell(row=row, column=COL_B).value,
             'C': safe_float(ws.cell(row=row, column=COL_C).value),
             'D': safe_float(ws.cell(row=row, column=COL_D).value),
+            'N': safe_float(ws.cell(row=row, column=COL_N).value),
             'G': ws.cell(row=row, column=COL_G).value,
             'K': ws.cell(row=row, column=COL_K).value,
             'O': ws.cell(row=row, column=COL_O).value,
@@ -82,7 +84,10 @@ def read_groups(ws):
 
 
 def calc_EF(rows, molar_mass):
-    """计算组内每行的 E列 和 F列"""
+    """计算组内每行的 E列 和 F列
+    转化文库: N列(Qubit) < 2.5 → ×10, 否则 ×50
+    直接环化: 固定 ×300
+    """
     d_sum = sum(r['D'] for r in rows)
     if d_sum == 0:
         for r in rows:
@@ -90,8 +95,14 @@ def calc_EF(rows, molar_mass):
             r['F'] = 0.0
         return
 
+    is_conv = (molar_mass == 50.0)
     for r in rows:
-        r['E'] = round(r['D'] / d_sum * molar_mass, 3)
+        if is_conv:
+            n_val = safe_float(r.get('N'))
+            mm = 10.0 if n_val < 2.5 else 50.0
+        else:
+            mm = molar_mass
+        r['E'] = round(r['D'] / d_sum * mm, 3)
         r['F'] = round(r['E'] / r['C'], 3) if r['C'] > 0 else 0.0
 
 
@@ -122,7 +133,7 @@ def regroup(rows, molar_mass):
     for r in sorted_by_f[1:]:
         new_min = min(cur_min, r['F'])
         new_max = max(cur_max, r['F'])
-        if new_min > 0 and new_max / new_min > 3:
+        if new_min > 0 and new_max / new_min > 5:
             sub_groups.append(cur)
             cur = [r]
             cur_min = cur_max = r['F']
@@ -201,6 +212,10 @@ def process_sheet(ws, name):
 
     current_row = 2
     for sg_rows, sg_mm, scale, is_direct in all_final:
+        d_first = current_row
+        d_last = current_row + len(sg_rows) - 1
+        summary_row = d_last + 1
+
         # 写入数据行
         for rd in sg_rows:
             for col in range(1, max_col + 1):
@@ -208,48 +223,45 @@ def process_sheet(ws, name):
                 if col == COL_E:
                     cell.value = rd['E']
                 elif col == COL_F:
-                    cell.value = rd['F']
+                    cell.value = f'=ROUND(E{current_row}/C{current_row}*G{summary_row},3)'
                 else:
                     cell.value = rd['cells'].get(col)
                 cell.alignment = CENTER
             current_row += 1
 
         # ── 汇总行 ──
-        d_sum = sum(r['D'] for r in sg_rows)
-        f_sum = sum(r['F'] for r in sg_rows)
+        # D列: =ROUND(SUM,2)
+        c = ws.cell(row=summary_row, column=COL_D)
+        c.value = f'=ROUND(SUM(D{d_first}:D{d_last}),2)'
+        c.alignment = CENTER
 
-        # F汇总: 若放大过 → SUM(F放大后) / N * 2
-        if scale > 1:
-            f_summary = round(f_sum / scale * 2, 3)
-        else:
-            f_summary = round(f_sum, 3)
+        # E列: 总摩尔质量(静态)
+        c = ws.cell(row=summary_row, column=COL_E)
+        c.value = round(sum(r['E'] for r in sg_rows), 3)
+        c.alignment = CENTER
 
-        te_buffer = round(20.0 - f_summary, 3) if not is_direct else round(40.0 - f_summary, 3)
+        # F列: =IF(G>1,ROUND(SUM/G*2,3),ROUND(SUM,3))
+        c = ws.cell(row=summary_row, column=COL_F)
+        c.value = f'=IF(G{summary_row}>1,ROUND(SUM(F{d_first}:F{d_last})/G{summary_row}*2,3),ROUND(SUM(F{d_first}:F{d_last}),3))'
+        c.alignment = CENTER
 
-        # 汇总行: 只写 D/E/F/I/G, 其余留空
-        # D列: 总数据量 (保留两位小数)
-        ws.cell(row=current_row, column=COL_D).value = round(d_sum, 2)
-        ws.cell(row=current_row, column=COL_D).alignment = CENTER
+        # G列: 倍数(静态)
+        c = ws.cell(row=summary_row, column=COL_G)
+        c.value = scale
+        c.alignment = CENTER
 
-        # E列: 总摩尔质量
-        ws.cell(row=current_row, column=COL_E).value = round(sum(r['E'] for r in sg_rows), 3)
-        ws.cell(row=current_row, column=COL_E).alignment = CENTER
-
-        # F列: 汇总取样体积
-        ws.cell(row=current_row, column=COL_F).value = f_summary
-        ws.cell(row=current_row, column=COL_F).alignment = CENTER
-
-        # G列: 倍数
-        ws.cell(row=current_row, column=COL_G).value = scale
-        ws.cell(row=current_row, column=COL_G).alignment = CENTER
-
-        # I列: TE Buffer, 浅蓝背景
-        c = ws.cell(row=current_row, column=COL_I)
-        c.value = te_buffer
+        # I列: =ROUND(20/40-F,3), 浅蓝背景
+        c = ws.cell(row=summary_row, column=COL_I)
+        c.value = f'=ROUND(20-F{summary_row},3)' if not is_direct else f'=ROUND(40-F{summary_row},3)'
         c.alignment = CENTER
         c.fill = LIGHT_BLUE
 
-        current_row += 1
+        # M列: =AVERAGE(片段范围)
+        c = ws.cell(row=summary_row, column=COL_M)
+        c.value = f'=AVERAGE(M{d_first}:M{d_last})'
+        c.alignment = CENTER
+
+        current_row = summary_row + 1
 
     print(f'    写入完成: {current_row - 2} 行 (含间隔和汇总行)')
 

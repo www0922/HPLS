@@ -12,7 +12,7 @@
 """
 import openpyxl
 from pathlib import Path
-from openpyxl.styles import Alignment, Border, Side
+from openpyxl.styles import Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 BASE = Path(__file__).resolve().parent.parent / 'excel_data'
@@ -30,6 +30,8 @@ COL_D = 4
 COL_G = 7
 COL_H = 8
 COL_K = 11
+COL_O = 15
+COL_P = 16
 
 
 def read_groups(ws):
@@ -70,6 +72,52 @@ def read_groups_by_summary(ws):
     return groups
 
 
+def _is_direct(ws, data_rows):
+    """判断组是否为直接环化: G/O列含华大 或 P=已磷酸化"""
+    for r in data_rows:
+        g = str(ws.cell(row=r, column=COL_G).value or '')
+        o = str(ws.cell(row=r, column=COL_O).value or '')
+        p = str(ws.cell(row=r, column=COL_P).value or '')
+        if '华大' in g or '华大' in o or p == '已磷酸化':
+            return True
+    return False
+
+
+def _alt_fill_plate(ws, data_rows):
+    """板号交替填充: 不同板号前缀(下划线前)交替蓝色"""
+    blue = PatternFill(start_color='3399FF', end_color='3399FF', fill_type='solid')
+    # 收集板号前缀及首次出现顺序
+    seen = []
+    for row in data_rows:
+        plate = str(ws.cell(row=row, column=COL_K).value or '').strip()
+        if not plate:
+            continue
+        if '_' in plate:
+            prefix = plate.split('_')[0]
+        elif '-' in plate:
+            prefix = plate.rsplit('-', 1)[0]
+        else:
+            prefix = plate
+        if prefix not in seen:
+            seen.append(prefix)
+    if len(seen) < 2:
+        return
+    # 交替: 0=不填, 1=蓝色, 2=不填, 3=蓝色...
+    fill_prefixes = {p for i, p in enumerate(seen) if i % 2 == 1}
+    for row in data_rows:
+        plate = str(ws.cell(row=row, column=COL_K).value or '').strip()
+        if not plate:
+            continue
+        if '_' in plate:
+            prefix = plate.split('_')[0]
+        elif '-' in plate:
+            prefix = plate.rsplit('-', 1)[0]
+        else:
+            prefix = plate
+        if prefix in fill_prefixes:
+            ws.cell(row=row, column=COL_K).fill = blue
+
+
 def process_abc_sheet(ws, name):
     """处理 A/B/C 工作表: Lane编号、合并、框线"""
     groups = read_groups_by_summary(ws)
@@ -82,18 +130,21 @@ def process_abc_sheet(ws, name):
         first_row = rows[0]
         last_row = rows[-1]
 
-        # 取组内第一行的 G列、H列值
-        first_g = ws.cell(row=first_row, column=COL_G).value
-        first_h = ws.cell(row=first_row, column=COL_H).value
-        # 取汇总行(最后一行) D列值
-        summary_d = ws.cell(row=last_row, column=COL_D).value
-
-        lane_info.append((lane_name, first_g, first_h, summary_d))
-
         # 数据行范围 (不含汇总行)
         data_rows = rows[:-1] if len(rows) > 1 else rows
         data_first = data_rows[0]
         data_last = data_rows[-1]
+
+        # 取组内第一行的 G列、H列值
+        first_g = ws.cell(row=first_row, column=COL_G).value
+        first_h = ws.cell(row=first_row, column=COL_H).value
+        # 汇总D: 对数据行D列求和
+        summary_d = sum(
+            float(ws.cell(row=r, column=COL_D).value or 0)
+            for r in data_rows
+        )
+
+        lane_info.append((lane_name, first_g, first_h, summary_d))
 
         # 写入 Lane编号到数据行 A列
         for row in data_rows:
@@ -114,6 +165,15 @@ def process_abc_sheet(ws, name):
                 cell = ws.cell(row=row, column=col)
                 cell.border = ALL_BORDER
 
+        # 直接环化组: A列红色
+        if _is_direct(ws, data_rows):
+            red = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
+            for row in data_rows:
+                ws.cell(row=row, column=COL_A).fill = red
+
+        # 板号交替填充: 不同板号前缀交替蓝色
+        _alt_fill_plate(ws, data_rows)
+
         # 汇总行不加框线、不合并、不写Lane
 
     print(f'  Sheet {name}: {len(groups)} 组, Lane={name}1~{name}{len(groups)}')
@@ -126,8 +186,14 @@ def fill_huanhua_sheet(ws_hh, all_lane_info):
     if ws_hh.max_row > 1:
         ws_hh.delete_rows(2, ws_hh.max_row - 1)
 
+    row = 2
+    prev_letter = None
+
     for i, (lane, g_val, h_val, d_val) in enumerate(all_lane_info):
-        row = i + 2
+        cur_letter = lane[0] if lane else ''
+        if prev_letter and cur_letter != prev_letter:
+            row += 1
+        prev_letter = cur_letter
 
         # A列: Lane编号
         c = ws_hh.cell(row=row, column=1)
@@ -166,6 +232,11 @@ def fill_huanhua_sheet(ws_hh, all_lane_info):
         c.value = h_val
         c.alignment = CENTER
 
+        # J列(10): =40-G
+        c = ws_hh.cell(row=row, column=10)
+        c.value = f'=40-G{row}'
+        c.alignment = CENTER
+
         # M列(13): =22*L/F
         c = ws_hh.cell(row=row, column=13)
         c.value = f'=22*L{row}/F{row}'
@@ -174,6 +245,8 @@ def fill_huanhua_sheet(ws_hh, all_lane_info):
         # 框线 A~K
         for col in range(1, 12):
             ws_hh.cell(row=row, column=col).border = ALL_BORDER
+
+        row += 1
 
     print(f'  文库环化: 写入 {len(all_lane_info)} 行')
 

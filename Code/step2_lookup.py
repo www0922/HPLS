@@ -36,6 +36,7 @@ B_C = 3     # Qubit浓度
 B_D = 4     # 数据量
 B_J = 10    # 孔号
 B_K = 11    # 板号
+B_M = 13    # 平均片段
 B_N = 14    # Qubit浓度 (第二处)
 B_O = 15    # 文库结构
 B_P = 16    # 磷酸化*
@@ -51,7 +52,7 @@ def build_c_lookup():
         ws = wb[sn]
         # 找表头行，确定列位置
         header_row = None
-        col_f = col_l = col_o = col_v = col_w = col_x = None
+        col_f = col_l = col_o = col_v = col_w = col_x = col_m = None
         for row in range(1, min(5, ws.max_row + 1)):
             for col in range(1, ws.max_column + 1):
                 v = str(ws.cell(row=row, column=col).value or '')
@@ -67,6 +68,8 @@ def build_c_lookup():
                     col_w = col
                 if '环化' in v:
                     col_x = col
+                if '平均片段' in v:
+                    col_m = col
             if col_f:
                 header_row = row
                 break
@@ -74,7 +77,7 @@ def build_c_lookup():
         if not col_f:
             continue
 
-        print(f'  C表[{sn}]: header_row={header_row}, F={col_f}, L={col_l}, O={col_o}, V={col_v}, W={col_w}, X={col_x}')
+        print(f'  C表[{sn}]: header_row={header_row}, F={col_f}, L={col_l}, O={col_o}, V={col_v}, W={col_w}, X={col_x}, M={col_m}')
 
         for row in range(header_row + 1, ws.max_row + 1):
             key = ws.cell(row=row, column=col_f).value
@@ -93,6 +96,7 @@ def build_c_lookup():
                 'struct': get_val(col_v),  # 文库结构
                 'phos':   get_val(col_w),  # 磷酸化*
                 'circ':   get_val(col_x),  # 环化*
+                'frag':   get_val(col_m),  # 平均片段
             }
 
     wb.close()
@@ -105,7 +109,7 @@ def build_d_lookup():
     wb = openpyxl.load_workbook(SRC_D, data_only=True)
     ws = wb['自建库出库报告总表']
 
-    col_d = col_k = col_o = col_s = col_t = None
+    col_d = col_k = col_o = col_s = col_t = col_m = None
     for col in range(1, ws.max_column + 1):
         v = str(ws.cell(row=1, column=col).value or '')
         if v == '样本编号':
@@ -118,8 +122,10 @@ def build_d_lookup():
             col_s = col
         elif v == '版号':
             col_t = col
+        elif '平均片段' in v:
+            col_m = col
 
-    print(f'  D表: D={col_d}, K={col_k}, O={col_o}, S={col_s}, T={col_t}')
+    print(f'  D表: D={col_d}, K={col_k}, O={col_o}, S={col_s}, T={col_t}, M={col_m}')
 
     lookup = {}
     for row in range(2, ws.max_row + 1):
@@ -138,6 +144,7 @@ def build_d_lookup():
             'eval':   get_val(col_o),
             'hole':   get_val(col_s),
             'plate':  get_val(col_t),
+            'frag':   get_val(col_m),
         }
 
     wb.close()
@@ -173,6 +180,7 @@ def fill_sheet(ws_b, c_lookup, d_lookup, name):
                 write_cell(ws_b, row, B_P, data.get('phos'))
                 write_cell(ws_b, row, B_Q, data.get('circ'))
                 write_cell(ws_b, row, B_K, data.get('plate'))
+                write_cell(ws_b, row, B_M, data.get('frag'))
                 filled += 1
             else:
                 missed += 1
@@ -184,6 +192,7 @@ def fill_sheet(ws_b, c_lookup, d_lookup, name):
                 write_cell(ws_b, row, B_O, data.get('eval'))
                 write_cell(ws_b, row, B_K, data.get('plate'))
                 write_cell(ws_b, row, B_J, data.get('hole'))
+                write_cell(ws_b, row, B_M, data.get('frag'))
                 filled += 1
             else:
                 missed += 1
