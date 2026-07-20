@@ -82,7 +82,7 @@ def read_groups(ws):
 
 def calc_EF(rows, molar_mass):
     """计算组内每行的 E列 和 F列
-    转化文库: N列(Qubit) < 2.5 → ×10, 否则 ×50
+    转化文库: 组内任一行 N列 < 2.6 → 整组 ×10, 否则 ×50
     直接环化: 固定 ×300
     """
     d_sum = sum(r['D'] for r in rows)
@@ -93,12 +93,14 @@ def calc_EF(rows, molar_mass):
         return
 
     is_conv = (molar_mass == 50.0)
+    if is_conv:
+        # 检查组内是否有 N < 2.6
+        has_low_n = any(safe_float(r.get('N')) < 2.6 for r in rows)
+        mm = 10.0 if has_low_n else 50.0
+    else:
+        mm = molar_mass
+
     for r in rows:
-        if is_conv:
-            n_val = safe_float(r.get('N'))
-            mm = 10.0 if n_val < 2.5 else 50.0
-        else:
-            mm = molar_mass
         r['E'] = round(r['D'] / d_sum * mm, 3)
         r['F'] = round(r['E'] / r['C'], 3) if r['C'] > 0 else 0.0
 
@@ -163,16 +165,34 @@ def sort_by_plate(rows):
 
 def apply_scale(rows):
     """
-    检查F列最小值, 若 <0.250 则找最小整数N使 min(F*N)>0.500
+    检查F列最小值, 确定缩放倍数N
+    有板号: F < 1 → 放大到 > 1
+    无板号: F < 0.250 → 放大到 > 0.500
     返回: scale_factor (1 表示未放大)
     """
     f_vals = [r['F'] for r in rows if r['F'] > 0]
-    if not f_vals or min(f_vals) >= 0.250:
+    if not f_vals:
         return 1
 
-    n = 1
-    while min(f_vals) * n <= 0.500:
-        n += 1
+    # 是否有板号
+    has_plate = any(
+        r.get('K') is not None and str(r.get('K')).strip()
+        for r in rows
+    )
+
+    if has_plate:
+        threshold = 1.0
+        if min(f_vals) >= threshold:
+            return 1
+        n = 1
+        while min(f_vals) * n <= threshold:
+            n += 1
+    else:
+        if min(f_vals) >= 0.250:
+            return 1
+        n = 1
+        while min(f_vals) * n <= 0.500:
+            n += 1
 
     for r in rows:
         r['F'] = round(r['F'] * n, 3)

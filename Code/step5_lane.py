@@ -27,6 +27,7 @@ COL_D = 4
 COL_G = 7
 COL_H = 8
 COL_K = 11
+COL_L = 12
 COL_O = 15
 COL_P = 16
 
@@ -158,7 +159,7 @@ def process_abc_sheet(ws, name):
 
         # 仅数据行 A列~K列 标框线（汇总行不加）
         for row in data_rows:
-            for col in range(COL_A, COL_K + 1):
+            for col in range(COL_A, COL_L + 1):
                 cell = ws.cell(row=row, column=col)
                 cell.border = ALL_BORDER
 
